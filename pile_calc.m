@@ -9,7 +9,7 @@
 clc; clear;
 
 % ---------------- SELECT INPUT FILE ----------------
-input_func_name = 'input_example_timber';   % change this to switch cases
+input_func_name = 'input_east_greynolds';   % change this to switch cases
 % input_func_name = 'input_template';
 
 results = ng_run_case(input_func_name);

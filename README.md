@@ -22,23 +22,53 @@ of soil layers (each layer sand XOR clay).
 | Tip, clay | `qp = Nc * cu`, `Nc` from Table 8-2 (function of z/B, max 9.0) |
 | Caps | optional absolute `f_limit` / `q_limit` (off by default) |
 | Uplift | `Qup_ult = Qside_up + W`, `W` = buoyant weight of the embedded pile (negative for timber lighter than water) |
-| Allowable | `down = Qtip/FS_tip + Qside/FS_side`; `up = Qup_ult/FS_uplift` |
+| Allowable | `down = Qtip/FS_tip + Qside/FS_side`; `up = Qside_up/FS_uplift + W/FS_weight` (ALLPILE manual 8.1.1.7) |
 | Settlement (max) | Vesic (1977) at ULTIMATE resistance — an **upper bound**: `X_max = Xs + Xpp + Xps`, `Cp` from Table 8-3 |
-| Settlement (applied) | at the applied compression load `Q = inp.Q_applied`: split `Qwp = Q·Qtip/Qult`, `Qws = Q·Qside/Qult`, then `s_applied = s1 + s2 + s3` with `s1 = (Qwp + xi·Qws)·L/(Ap·Ep)`, `s2 = Cp·Qwp/(D·qp)`, `s3 = Cs·Qws/(Le·qp)` (same `qp` as X_max). Reported only when `Q_applied` is set |
+| Settlement (applied) | at `Q = inp.Q_applied` (compression > 0, **uplift < 0**), by `par.settle_method`: **`'allpile'`** (default) — ALLPILE's load-settlement relation from the Reese & O'Neill t-z/q-w curves scaled by the Vesic settlement; or `'vesic_linear'` — shaft-first split + linear Vesic terms. Reported only when `Q_applied` is set |
 
 **Two settlements, and what they mean.** `X_max` is the Vesic settlement at
 **ultimate** resistance — the *maximum* that could occur (an upper bound),
 **not** the service settlement. `s_applied` is the settlement under the
-applied working load, obtained by splitting `Q_applied` between tip and shaft
-in proportion to their ultimate resistances (a simplification) and applying
-the three linear Vesic terms. Because `s2` and `s3` scale `Xpp`/`Xps` by
-`Q/Qult`, `s_applied ≈ X_max·(Q/Qult)`.
+applied working load.
 
-**Settlement caveat:** `s_applied` is a Vesic **linear-elastic** estimate.
-ALLPILE's *reported* working-load settlement uses nonlinear Reese–O'Neill
-t-z/q-w load-transfer curves, so the two will **not** match exactly. (And
-`X_max`, being at ultimate, is larger still.) Reproducing ALLPILE's nonlinear
-working-load value is out of scope.
+**`s_applied`, `settle_method = 'allpile'` (default).** This is ALLPILE 7's
+"LOAD - TOTAL SETTLEMENT RELATION (from t-z, and q-w curves) — Based on Vesic
+Method" (Advanced page, *Option 2*), reconstructed from ALLPILE's own output
+and verified on all 17 benchmark runs (see *Validation against ALLPILE*):
+
+- the Reese & O'Neill normalized curves for cohesionless soil (ALLPILE manual
+  Figs 8-3 side, 8-5 base) are expressed in `u = movement / X_max` and
+  stepped over ALLPILE's 100-point grid (`ng_lt_curves`);
+- **compression**: `Xtip = u·X_max`, `Qtip = R_tip(u)·Qtip_ult`,
+  `Qside = R_side(u)·Qside_ult`, shaft compression
+  `Xshaft = (Qtip + 0.5·Qside)·Le/(A·E)` (+ the full load over any stick-up),
+  `Xtop = Xtip + Xshaft`;
+- **uplift**: the pile moves as a rigid body, `Xtop = −u·X_up_max` with
+  `X_up_max = Xs_up + Xps_up`, and `Qtotal = R_side(u)·(Qside_up + W) + W`;
+- the work-load settlement is a linear interpolation of `Xtop` against
+  `Qtotal` at `Q_applied`, as ALLPILE does. Upward movement is negative.
+  A load above the curve's peak gives NaN and a warning (ALLPILE prints 99999).
+
+Both `s_allpile` and `s_vesic_linear` are always reported; `s_applied` is
+the selected one. Known limits of the `'allpile'` method:
+
+- **Cohesive soil.** ALLPILE uses separate cohesive curves (Figs 8-2/8-4) that
+  the benchmark doesn't cover, so they aren't included. With clay along the
+  pile the cohesionless curves are used and a `navfac_general:ltCohesive`
+  warning says so.
+- **Stick-up.** None of the benchmark runs has one, so behaviour with a
+  free length (full load carried above grade) is an extrapolation, not a
+  verified match.
+- **Heavy piles in uplift.** ALLPILE's uplift table counts the pile weight
+  `W` twice (in the mobilized side *and* in the total). That is reproduced
+  as-is. For piles lighter than water (`W < 0`, timber) it is immaterial; for
+  heavy piles (`W > 0`, concrete) the uplift table can exceed `Qup_ult`.
+
+**`s_applied`, `settle_method = 'vesic_linear'`.** The earlier linear
+estimate, compression only. The load is split **shaft-first** —
+`Qws = min(Q, Qside)`, `Qwp = Q − Qws` — then `s1 = (Qwp + xi·Qws)·L/(Ap·Ep)`,
+`s2 = Cp·Qwp/(D·qp)`, `s3 = Cs·Qws/(Le·qp)`. For any `Q ≤ Qside` the point
+term `s2` is exactly zero. It runs 11–17 % above ALLPILE on the benchmark.
 
 ## Parameters, defaults, and sources
 
@@ -53,14 +83,16 @@ functions**. Full documentation in [ng_defaults.m](ng_defaults.m).
 | `par.Kc`, `par.Ka` | 1.0, 1.0 | – | clay adhesion `Ca = Kc*Ka*cu`; reduce per an adhesion table if warranted |
 | `par.PR` | 20 | – | critical-depth ratio, `z_crit = PR*D`; customary 10–20, 20 = ALLPILE/NAVFAC deep-pile default |
 | `par.FS_tip/_side/_uplift` | 3.0 | – | NAVFAC DM-7.02, static analysis without load test |
+| `par.FS_weight` | 1.0 | – | factor on the pile weight `W` in the allowable uplift, `Qside_up/FS_uplift + W/FS_weight` (ALLPILE's default and formula) |
 | `par.f_limit`, `par.q_limit` | NaN (off) | psf | absolute caps on unit side/tip resistance |
 | `par.Cp` | NaN (auto) | – | Vesic Table 8-3 via [ng_cp_table.m](ng_cp_table.m): sand driven 0.02–0.04 (mid 0.03), sand bored 0.09–0.18; clay driven 0.02–0.03, clay bored 0.03–0.06 (range midpoints) |
 | `par.settle_dz` | 0.05 | ft | slice size for the axial-shortening integration |
-| `par.xi` | 0.6 | – | Vesic shaft-shortening coeff. in `s1` (applied-load settlement); range 0.5 (uniform side load) – 0.67 (triangular) |
+| `par.settle_method` | 'allpile' | – | `'allpile'` (ALLPILE t-z/q-w, compression + uplift) or `'vesic_linear'` (shaft-first linear Vesic, compression only); selects `s_applied` |
+| `par.xi` | 0.6 | – | Vesic shaft-shortening coeff. in `s1` (`'vesic_linear'` only); range 0.5 (uniform side load) – 0.67 (triangular). `'allpile'` uses ALLPILE's fixed 0.5 |
 | `pile.pile_type` | 'displacement' | – | 'displacement' (driven) / 'nondisplacement' (bored); selects Nq and Cp columns |
 | `pile.water_table_ft` | 0 | ft | depth below surface; 0 = at/above surface |
 | `pile.gamma_w` | 62.4 | pcf | water unit weight for pile buoyancy (64.0 seawater) |
-| `Q_applied` (top-level) | NaN (skip) | lb | applied axial **compression** (down) load for the service-settlement check; NaN/absent ⇒ only `X_max` is reported; `≥ Qult` warns but still reports |
+| `Q_applied` (top-level) | NaN (skip) | lb | applied axial load for the service-settlement check, ALLPILE's sign: **compression > 0, uplift < 0**; NaN/absent ⇒ only `X_max` is reported, while `0` still runs the block and reports `s_applied = 0`; a load `≥` the ultimate capacity in its direction warns |
 
 Units throughout: depths/lengths **ft**, pile size **in**, unit weights
 **pcf**, stress/strength **psf**, `phi` **deg**, pile modulus `E` **psi**,
@@ -84,6 +116,8 @@ navfac_general/
 ├── ng_nc_table.m          Table 8-2 Nc(z/B)
 ├── ng_cp_table.m          Table 8-3 Vesic Cp (range midpoints)
 ├── ng_settlement_vesic.m  Vesic (1977) settlement: ultimate bound X_max + applied-load s_applied
+├── ng_load_transfer.m     ALLPILE t-z/q-w load-settlement tables + work-load settlement
+├── ng_lt_curves.m         normalized load-transfer curves (cohesionless), ALLPILE grid
 ├── ng_pile_geometry.m     round/square A & P (+ optional A/P overrides, e.g. H-pile)
 ├── ng_layer_at.m          layer index containing a depth
 ├── ng_print_results.m     console summary + per-layer debug table
@@ -99,6 +133,8 @@ navfac_general/
     ├── test_regression_P1.m   P-1 vs ALLPILE regression (the proof)
     ├── input_P1_regression.m  frozen P-1 fixture — do not edit
     ├── test_validation.m      validation errors, warnings, generalization checks
+    ├── test_allpile_benchmark.m  all 17 ALLPILE runs vs the package
+    ├── allpile_benchmark_cases.m ALLPILE inputs + results (generated from the outputs)
     └── ci_run.m               headless runner (writes ci_run.log + ci_done.txt)
 ```
 
@@ -109,8 +145,9 @@ navfac_general/
 2. Fill in the pile block and the soil layers (contiguous from depth 0, deep
    enough to cover the tip; each layer `phi` XOR `cu`). Override any `par.*`
    you need — everything else uses the documented defaults. Optionally set
-   `inp.Q_applied` (applied compression load, [lb]) to also get the
-   service-load settlement `s_applied` alongside the ultimate bound `X_max`.
+   `inp.Q_applied` (applied load [lb], compression > 0 / uplift < 0) to also
+   get the service-load settlement `s_applied` alongside the ultimate bound
+   `X_max`.
 3. Run it:
    ```matlab
    >> results = ng_run_case('input_myCase');   % or edit + run pile_calc.m
@@ -161,8 +198,80 @@ never silent extrapolation), and generalization behaviors (square piles, clay
 tips, critical-depth capping, water table below grade, f/q limits,
 non-displacement piles).
 
+## Validation against ALLPILE
+
+`test_allpile_benchmark` runs all 17 ALLPILE 7 vertical analyses in
+`Foundation\Test Cases - Allpile` (Cristobal Pier: 11 timber piles, 5 distinct
+soil profiles, compression and uplift work loads) through the package and
+checks every output it reproduces. The fixture `allpile_benchmark_cases.m` is
+generated from ALLPILE's `0summary.txt` / `0detail.txt` and passes ALLPILE's
+own inputs, including its stored section values (A = 78.5 in², P = 31.4 in)
+and pile weight per foot (0.020 kip/ft → `SW = 20/A`).
+
+| Output | Agreement with ALLPILE (17 runs) |
+|---|---|
+| side resistance down / up, tip, ultimate down / up, allowable down | ≤ 0.13 % |
+| allowable uplift | ≤ 0.07 % |
+| pile weight W | within ALLPILE's 2-decimal print |
+| Vesic Xs, Xpp, Xps, X_max at ultimate | every printed digit |
+| work-load settlement, compression (13 runs) | ≤ 0.35 % |
+| work-load movement, uplift (4 runs) | every printed digit |
+
+The ≤ 0.13 % capacity residual is ALLPILE's numerics: it sums side friction
+over a fixed 500-node grid, while the package integrates each layer exactly.
+The residual doesn't follow any single discretization rule and is below what
+the printed inputs can resolve, so it is left as is.
+
 ## Octave compatibility
 
 No tables/`writetable`, no `string` class, no `arguments` blocks — plain
 structs, `fprintf`, and `interp1` only, so the suite runs under GNU Octave
 (tested style; CSV writing is hand-rolled in `ng_write_csv.m`).
+
+## Changes in v3
+
+Carried over from the v2 package, with four fixes:
+
+1. **Applied-load split is now shaft-first, and committed to.** v2 had a
+   half-finished edit: the proportional split was commented out and replaced
+   with a shaft-first one, while the README, the `ng_settlement_vesic`
+   docstring and both tests still described and asserted the proportional
+   split (so `test_regression_P1` and `test_validation` would have failed).
+   The shaft-first model is now the documented, implemented and tested
+   behaviour throughout: `Qws = min(Q, Qside)`, `Qwp = Q - Qws`.
+2. **`par.Kf` default is 0.75**, matching the documented NAVFAC
+   `delta = 3/4*phi` for concrete/timber piles. v2 documented 0.75 but shipped
+   0.8. `inputs/input_10in_LJ.m` now sets `Kf = 0.80` explicitly, so that
+   case's results are unchanged by the new default.
+3. **Stale CSVs removed from `outputs/`.** v2 shipped a `batch_summary.csv`
+   generated before the settlement edit and before the second case existed.
+   Everything in `outputs/` is generated - run `pile_calc_batch` to rebuild it.
+4. **`inputs/input_example_timber.m` now matches its own description** - it
+   really does have a water table below grade (4 ft) and a clay interbed
+   (15-20 ft), so the clay side-friction and split-unit-weight paths are
+   exercised by the shipped example, not just by the test suite.
+
+### ALLPILE benchmark update (2026-11-04)
+
+Checked against the 17 ALLPILE runs in `Test Cases - Allpile` and changed in
+place (see *Validation against ALLPILE*):
+
+1. **Allowable uplift now follows ALLPILE**: `Qside_up/FS_uplift +
+   W/FS_weight` (new `par.FS_weight`, default 1.0), replacing
+   `Qup_ult/FS_uplift`. It had run 4–6 % high on every run.
+2. **Work-load settlement now reproduces ALLPILE** (new default
+   `par.settle_method = 'allpile'`, new `ng_load_transfer.m` /
+   `ng_lt_curves.m`). The shaft-first linear Vesic estimate, which had run
+   11–17 % high, is kept as `'vesic_linear'` and still reported as
+   `s_vesic_linear`.
+3. **Uplift work loads are now accepted**: `Q_applied < 0`, ALLPILE's sign
+   convention, giving an upward (negative) movement.
+4. New outputs: `X_up_max`, `s_allpile`, `s_vesic_linear`, `Kqx` (secant
+   stiffness, as ALLPILE prints) and the full load-settlement tables in
+   `results.settlement.lt`.
+
+Capacities and the Vesic settlement at ultimate already matched ALLPILE and
+are unchanged.
+
+Only the navfac side changed between v1, v2 and v3; the sibling `reissner/`
+package is byte-identical across all three.

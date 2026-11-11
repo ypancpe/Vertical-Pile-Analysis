@@ -52,9 +52,13 @@ function def = ng_defaults()
 %
 %   FS_tip, FS_side, FS_uplift
 %            Factors of safety. Allowable(down) = Qtip/FS_tip +
-%            Qside/FS_side; Allowable(up) = Qup_ult/FS_uplift.
-%            Default 3.0 each (NAVFAC DM-7.02 static analysis without a
-%            load test). [-]
+%            Qside/FS_side. Default 3.0 each (NAVFAC DM-7.02 static
+%            analysis without a load test). [-]
+%
+%   FS_weight  Factor of safety on the (buoyant) pile weight W in the
+%            allowable UPLIFT capacity, as ALLPILE (manual 8.1.1.7):
+%              Allowable(up) = Qside_up/FS_uplift + W/FS_weight
+%            Default 1.0 (ALLPILE's default). [-]
 %
 %   f_limit  Absolute cap on unit side friction [psf]. NaN = no cap.
 %   q_limit  Absolute cap on unit tip bearing  [psf]. NaN = no cap.
@@ -69,10 +73,22 @@ function def = ng_defaults()
 %   settle_dz  Nominal slice thickness for the axial-shortening
 %              integration in ng_settlement_vesic. [ft]
 %
-%   xi       Vesic shaft-shortening coefficient in the APPLIED-load
+%   settle_method  How s_applied (settlement at inp.Q_applied) is computed:
+%            'allpile' (default) - ALLPILE 7's load-settlement relation from
+%                the Reese & O'Neill t-z/q-w curves scaled by the Vesic
+%                settlement (Advanced page "Option 2"); compression and
+%                uplift. Matches ALLPILE's work-load settlement on the
+%                benchmark (tests/test_allpile_benchmark.m).
+%            'vesic_linear' - linear Vesic estimate with a shaft-first load
+%                split; compression only. Runs 11-17% above ALLPILE.
+%            Both are always computed (st.s_allpile, st.s_vesic_linear);
+%            this only selects which one is s_applied.
+%
+%   xi       Vesic shaft-shortening coefficient in the 'vesic_linear'
 %            settlement s1 = (Qwp + xi*Qws)*L/(Ap*Ep). It reflects the
 %            distribution of side resistance along the shaft; range
 %            0.5 (uniform) to 0.67 (triangular), default 0.6. [-]
+%            ('allpile' uses ALLPILE's own fixed 0.5, not this value.)
 %
 %   Q_work   Optional working load, echoed for reference only. NOT the load
 %            used for the applied-load settlement - that is inp.Q_applied
@@ -81,12 +97,16 @@ function def = ng_defaults()
 %   ---------------------------------------------------------------------
 %   TOP-LEVEL INPUTS (alongside inp.pile / inp.par / inp.layers)
 %   ---------------------------------------------------------------------
-%   Q_applied  Applied axial COMPRESSION (downward) load for the
-%              service-settlement check [lb]. Defaulted to NaN in
-%              ng_apply_defaults: NaN or absent => the applied-load
-%              settlement block is skipped and only the ultimate
-%              (upper-bound) Vesic settlement X_max is reported. A value
-%              >= the ultimate downward capacity warns but still reports.
+%   Q_applied  Applied axial load for the service-settlement check [lb]:
+%              COMPRESSION (downward) > 0, UPLIFT < 0 - ALLPILE's sign
+%              convention. Defaulted to NaN in ng_apply_defaults: NaN or
+%              absent => the applied-load settlement block is skipped and
+%              only the ultimate (upper-bound) Vesic settlement X_max is
+%              reported. Zero is allowed and is NOT the same as absent -
+%              the block runs and reports s_applied = 0. Uplift movement
+%              comes out negative (upward) and needs settle_method
+%              'allpile'. A load >= the ultimate capacity in its direction
+%              warns.
 %
 %   ---------------------------------------------------------------------
 %   PILE DEFAULTS (def.pile) - merged under inp.pile
@@ -121,10 +141,12 @@ function def = ng_defaults()
         'FS_tip',    3.0, ...
         'FS_side',   3.0, ...
         'FS_uplift', 3.0, ...
+        'FS_weight', 1.0, ...
         'f_limit',   NaN, ...
         'q_limit',   NaN, ...
         'Cp',        NaN, ...
         'settle_dz', 0.05, ...
+        'settle_method', 'allpile', ...
         'xi',        0.6, ...
         'Q_work',    NaN);
 

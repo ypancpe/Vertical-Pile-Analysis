@@ -32,20 +32,30 @@ function ng_print_results(inp, cap, st, dbg)
         fprintf('  Side resistance (up)   : %8.3f kips\n', k(cap.Qside_up));
         fprintf('  Buoyant pile weight W  : %8.3f kips\n', k(cap.W));
         fprintf('  Total ultimate (up)    : %8.3f kips\n', k(cap.Qup_ult));
-        fprintf('  Total allowable (up)   : %8.3f kips  (FS = %.1f)\n', ...
-            k(cap.Qup_allow), inp.par.FS_uplift);
+        fprintf('  Total allowable (up)   : %8.3f kips  (= Qside_up/%.1f + W/%.1f)\n', ...
+            k(cap.Qup_allow), inp.par.FS_uplift, inp.par.FS_weight);
         if ~isempty(st)
             fprintf('--- SETTLEMENT (Vesic 1977) ---\n');
             fprintf('  Maximum settlement (at ULTIMATE capacity - upper bound):\n');
             fprintf('    Xs(shaft)=%.4f in   Xpp(point)=%.4f in   Xps(transfer)=%.4f in   X_max=%.4f in\n', ...
                 st.Xs, st.Xpp, st.Xps, st.Xmax);
             if st.has_applied
-                fprintf('  Settlement at applied load Q=%.3f k  (Q/Qult=%.3f):\n', ...
-                    k(st.Q_applied), st.ratio);
-                fprintf('    s_shaft=%.4f in   s_point=%.4f in   s_transfer=%.4f in   s_applied=%.4f in\n', ...
-                    st.s1, st.s2, st.s3, st.s_applied);
-                fprintf('    [load split: tip Qwp=%.3f k, shaft Qws=%.3f k]\n', ...
-                    k(st.Qwp), k(st.Qws));
+                if st.Q_applied >= 0, dirn = 'compression'; else, dirn = 'UPLIFT'; end
+                fprintf('  Settlement at applied load Q=%.3f k  (%s, |Q|/Qult=%.3f):\n', ...
+                    k(st.Q_applied), dirn, st.ratio);
+                if strcmp(st.settle_method, 'allpile')
+                    fprintf('    s_applied = %.5f in   [ALLPILE t-z/q-w, Option 2; Kqx = %.1f k/in]\n', ...
+                        st.s_applied, k(st.Kqx));
+                    if isfinite(st.s_vesic_linear)
+                        fprintf('    (vesic_linear estimate: %.5f in)\n', st.s_vesic_linear);
+                    end
+                else
+                    fprintf('    s_shaft=%.4f in   s_point=%.4f in   s_transfer=%.4f in   s_applied=%.4f in\n', ...
+                        st.s1, st.s2, st.s3, st.s_applied);
+                    fprintf('    [vesic_linear, shaft-first split: shaft Qws=%.3f k, tip Qwp=%.3f k]\n', ...
+                        k(st.Qws), k(st.Qwp));
+                    fprintf('    (ALLPILE t-z/q-w estimate: %.5f in)\n', st.s_allpile);
+                end
                 if st.ratio >= 1
                     fprintf('    WARNING: applied load >= ultimate capacity (pile overloaded).\n');
                 end
@@ -54,10 +64,6 @@ function ng_print_results(inp, cap, st, dbg)
             end
             fprintf('  Cp=%.3f (%s);  xi=%.2f\n', st.Cp, st.cp_source, st.xi);
             fprintf('  NOTE: X_max is the bound at full ultimate resistance, NOT the service settlement.\n');
-            if st.has_applied
-                fprintf('  NOTE: s_applied is a Vesic linear-elastic estimate; ALLPILE''s nonlinear\n');
-                fprintf('        Reese-O''Neill (t-z/q-w) working-load settlement will differ.\n');
-            end
         end
     end
 

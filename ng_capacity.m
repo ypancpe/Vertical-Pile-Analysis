@@ -20,7 +20,10 @@ function [cap, dbg] = ng_capacity(pile, layers, par)
 %     uplift     : Qup_ult = Qside_up + W, where W is the BUOYANT weight of
 %                  the embedded pile (negative for timber lighter than
 %                  water -> reduces uplift capacity)
-%     allowable  : down = Qtip/FS_tip + Qside/FS_side; up = Qup_ult/FS_uplift
+%     allowable  : down = Qtip/FS_tip + Qside/FS_side
+%                  up   = Qside_up/FS_uplift + W/FS_weight
+%                  (ALLPILE manual 8.1.1.7: the pile weight carries its own
+%                  factor, default 1.0 - NOT Qup_ult/FS_uplift)
 %
 %   Units: ft, psf, pcf, deg, lb.
 %
@@ -157,7 +160,7 @@ function [cap, dbg] = ng_capacity(pile, layers, par)
     Qdown_ult   = Qtip + Qs_down;
     Qup_ult     = Qs_up + W;
     Qdown_allow = Qtip/par.FS_tip + Qs_down/par.FS_side;
-    Qup_allow   = Qup_ult/par.FS_uplift;
+    Qup_allow   = Qs_up/par.FS_uplift + W/par.FS_weight;   % ALLPILE 8.1.1.7
 
     cap = struct('D', D, 'A', A, 'P', P, 'z_crit', z_crit, ...
         'qp', qp, 'tip_desc', tip_desc, ...
@@ -178,5 +181,6 @@ function [cap, dbg] = ng_capacity(pile, layers, par)
     dbg.summary = struct('Qside_down', Qs_down, 'Qside_up', Qs_up, ...
         'Qtip', Qtip, 'W', W, 'Qdown_ult', Qdown_ult, 'Qup_ult', Qup_ult, ...
         'Qdown_allow', Qdown_allow, 'Qup_allow', Qup_allow, ...
-        'FS_tip', par.FS_tip, 'FS_side', par.FS_side, 'FS_uplift', par.FS_uplift);
+        'FS_tip', par.FS_tip, 'FS_side', par.FS_side, 'FS_uplift', par.FS_uplift, ...
+        'FS_weight', par.FS_weight);
 end

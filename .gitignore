@@ -1,0 +1,6 @@
+outputs/*
+!outputs/.gitkeep
+tests/ci_run.log
+tests/ci_done.txt
+*.mat
+*.asv

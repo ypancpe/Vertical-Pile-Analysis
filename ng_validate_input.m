@@ -6,19 +6,21 @@ function inp = ng_validate_input(inp)
 %   Checks
 %     pile  : shape round|square; size_in>0; embedment_ft>0; L>=embedment;
 %             E>0; SW>0; gamma_w>0; water_table_ft>=0; pile_type valid.
-%     par   : positive coefficients, FS>=1, PR>0, xi>0 (range warning).
+%     par   : positive coefficients, FS>=1 (incl. FS_weight), PR>0, xi>0
+%             (range warning), settle_method 'allpile'|'vesic_linear'.
 %     layers: non-empty; required fields; depth_bot>depth_top; first layer
 %             starts at 0; contiguous (no gaps/overlaps); gammas>0; each
 %             layer sand (phi>0) XOR clay (cu>0) - both or neither errors;
 %             embedment covered by the layer stack.
-%     Q_applied (top-level, optional): finite > 0 [lb], or NaN/absent.
+%     Q_applied (top-level, optional): finite [lb] (compression > 0, uplift
+%             < 0, zero allowed), or NaN/absent.
 %
 %   Units: depths/lengths ft, unit weights pcf, phi deg, cu psf, E psi.
 
     % ---------------- pile ----------------
     p = require_fields(inp, 'pile', {'shape','size_in','embedment_ft','L','E','SW'});
 
-    if ~(ischar(p.shape) && any(strcmp(lower(p.shape), {'round','square'})))
+    if ~(ischar(p.shape) && any(strcmpi(p.shape, {'round','square'})))
         error('navfac_general:badShape', ...
             'pile.shape must be ''round'' or ''square'' (got "%s").', tostr(p.shape));
     end
@@ -54,7 +56,7 @@ function inp = ng_validate_input(inp)
         warning('navfac_general:xiRange', ...
             'par.xi = %.3g is outside the usual Vesic range 0.5 - 0.67.', a.xi);
     end
-    fs = {'FS_tip','FS_side','FS_uplift'};
+    fs = {'FS_tip','FS_side','FS_uplift','FS_weight'};
     for i = 1:numel(fs)
         v = a.(fs{i});
         if ~(isnumeric(v) && isscalar(v) && isfinite(v) && v >= 1)
@@ -69,16 +71,23 @@ function inp = ng_validate_input(inp)
         warning('navfac_general:KfHigh', ...
             'par.Kf = %.2f gives delta > phi; NAVFAC uses delta <= phi (Kf <= 1).', a.Kf);
     end
+    if ~(ischar(a.settle_method) && any(strcmp(a.settle_method, {'allpile','vesic_linear'})))
+        error('navfac_general:badSettleMethod', ...
+            'par.settle_method must be ''allpile'' or ''vesic_linear'' (got "%s").', ...
+            tostr(a.settle_method));
+    end
 
     % ---------------- applied load (top-level, optional) ----------------
-    % NaN/absent = skip the applied-load settlement; a value must be a
-    % finite COMPRESSION (downward) load > 0 [lb].
+    % NaN/absent = skip the applied-load settlement. A value must be finite
+    % [lb], ALLPILE's sign convention: COMPRESSION > 0, UPLIFT < 0. Zero is
+    % allowed and is NOT the same as absent: the applied-load block still
+    % runs and reports s_applied = 0 (useful as a baseline / no-load check).
     if isfield(inp, 'Q_applied') && ~isempty(inp.Q_applied) && ~all(isnan(inp.Q_applied(:)))
         q = inp.Q_applied;
-        if ~(isnumeric(q) && isscalar(q) && isfinite(q) && q > 0)
+        if ~(isnumeric(q) && isscalar(q) && isfinite(q))
             error('navfac_general:badQapplied', ...
-                ['inp.Q_applied must be a finite compression (downward) load > 0 [lb], ' ...
-                 'or NaN/absent to skip the applied-load settlement.']);
+                ['inp.Q_applied must be a finite load [lb] (compression > 0, ' ...
+                 'uplift < 0), or NaN/absent to skip the applied-load settlement.']);
         end
     end
 
